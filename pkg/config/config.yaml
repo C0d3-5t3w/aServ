@@ -6,3 +6,14 @@ auth:
   expire_hrs: 24
 storage:
   path: ./pkg/storage/storage.json
+rate_limit:
+  enabled: true
+  max_per_min: 60
+features:
+  analytics: true
+  image_uploads: true
+  audit: true
+admin:
+  default_username: admin
+  default_password: adminpass
+  default_email: admin@example.com

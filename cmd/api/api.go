@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,10 @@ type ItemRequest struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	Price       float64 `json:"price"`
+}
+
+type TagRequest struct {
+	Name string `json:"name"`
 }
 
 var cfg *config.Config
@@ -58,6 +63,17 @@ func RegisterRoutes(router *mux.Router, config *config.Config, store *storage.St
 	itemsRouter.HandleFunc("/{id}", getItemHandler).Methods("GET")
 	itemsRouter.HandleFunc("/{id}", updateItemHandler).Methods("PUT")
 	itemsRouter.HandleFunc("/{id}", deleteItemHandler).Methods("DELETE")
+
+	tagsRouter := apiRouter.PathPrefix("/tags").Subrouter()
+	tagsRouter.Use(authMiddleware)
+	tagsRouter.HandleFunc("", createTagHandler).Methods("POST")
+	tagsRouter.HandleFunc("/{id}/items", getTagItemsHandler).Methods("GET")
+
+	apiRouter.HandleFunc("/search", searchHandler).Methods("GET")
+	apiRouter.HandleFunc("/analytics", getAnalyticsHandler).Methods("GET")
+	apiRouter.HandleFunc("/analytics/refresh", refreshAnalyticsHandler).Methods("POST")
+	apiRouter.HandleFunc("/audit-logs", getAuditLogsHandler).Methods("GET")
+	apiRouter.HandleFunc("/images/upload", imageUploadHandler).Methods("POST")
 
 	router.PathPrefix("/dashboard/").HandlerFunc(DashboardHandler)
 }
@@ -278,8 +294,9 @@ func deleteItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := r.Context().Value("userID").(string)
+	userRole := r.Context().Value("userRole").(string)
 
-	if existingItem.CreatedBy != userID {
+	if existingItem.CreatedBy != userID && userRole != storage.RoleAdmin {
 		helper.RespondWithError(w, http.StatusForbidden, "You don't have permission to delete this item")
 		return
 	}
@@ -290,6 +307,123 @@ func deleteItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	helper.RespondWithSuccess(w, http.StatusOK, "Item deleted", nil)
+}
+
+func createTagHandler(w http.ResponseWriter, r *http.Request) {
+	var req TagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	if req.Name == "" {
+		helper.RespondWithError(w, http.StatusBadRequest, "Tag name is required")
+		return
+	}
+
+	userID := r.Context().Value("userID").(string)
+
+	tag := storage.Tag{
+		ID:        uuid.New().String(),
+		Name:      req.Name,
+		CreatedAt: time.Now(),
+		CreatedBy: userID,
+	}
+
+	if err := st.CreateTag(tag); err != nil {
+		helper.RespondWithError(w, http.StatusInternalServerError, "Could not create tag")
+		return
+	}
+
+	helper.RespondWithSuccess(w, http.StatusCreated, "Tag created", tag)
+}
+
+func getTagItemsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	if _, err := st.GetTag(id); err != nil {
+		helper.RespondWithError(w, http.StatusNotFound, "Tag not found")
+		return
+	}
+
+	items := st.GetItemsByTag(id)
+	helper.RespondWithSuccess(w, http.StatusOK, "Tag items retrieved", items)
+}
+
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		helper.RespondWithError(w, http.StatusBadRequest, "Search query is required")
+		return
+	}
+
+	entityType := r.URL.Query().Get("type")
+	var results interface{}
+
+	switch entityType {
+	case "users":
+		results = st.SearchUsers(query)
+	case "items":
+		results = st.SearchItems(query)
+	default:
+		userResults := st.SearchUsers(query)
+		itemResults := st.SearchItems(query)
+
+		results = map[string]interface{}{
+			"users": userResults,
+			"items": itemResults,
+		}
+	}
+
+	helper.RespondWithSuccess(w, http.StatusOK, "Search results", results)
+}
+
+func getAnalyticsHandler(w http.ResponseWriter, r *http.Request) {
+	analytics := st.GetAnalytics()
+	helper.RespondWithSuccess(w, http.StatusOK, "Analytics retrieved", analytics)
+}
+
+func refreshAnalyticsHandler(w http.ResponseWriter, r *http.Request) {
+	st.UpdateAnalytics()
+	analytics := st.GetAnalytics()
+	helper.RespondWithSuccess(w, http.StatusOK, "Analytics refreshed", analytics)
+}
+
+func getAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	logs := st.GetAuditLogs(limit)
+	helper.RespondWithSuccess(w, http.StatusOK, "Audit logs retrieved", logs)
+}
+
+func imageUploadHandler(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		helper.RespondWithError(w, http.StatusBadRequest, "Could not parse form")
+		return
+	}
+
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		helper.RespondWithError(w, http.StatusBadRequest, "No file provided")
+		return
+	}
+	defer file.Close()
+
+	filename := uuid.New().String() + "-" + handler.Filename
+
+	helper.RespondWithSuccess(w, http.StatusOK, "Image uploaded", map[string]string{
+		"image_url": "/api/images/items/" + filename,
+	})
 }
 
 func authMiddleware(next http.Handler) http.Handler {
@@ -315,13 +449,14 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		_, err = st.GetUser(userID)
+		user, err := st.GetUser(userID)
 		if err != nil {
 			helper.RespondWithError(w, http.StatusUnauthorized, "User not found")
 			return
 		}
 
 		ctx := helper.SetUserContext(r.Context(), userID)
+		ctx = helper.SetUserRoleContext(ctx, user.Role)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

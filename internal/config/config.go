@@ -18,6 +18,20 @@ type Config struct {
 	Storage struct {
 		Path string `yaml:"path"`
 	} `yaml:"storage"`
+	RateLimit struct {
+		Enabled   bool `yaml:"enabled"`
+		MaxPerMin int  `yaml:"max_per_min"`
+	} `yaml:"rate_limit"`
+	Features struct {
+		Analytics    bool `yaml:"analytics"`
+		ImageUploads bool `yaml:"image_uploads"`
+		Audit        bool `yaml:"audit"`
+	} `yaml:"features"`
+	Admin struct {
+		DefaultUsername string `yaml:"default_username"`
+		DefaultPassword string `yaml:"default_password"`
+		DefaultEmail    string `yaml:"default_email"`
+	} `yaml:"admin"`
 }
 
 func LoadConfig() *Config {
@@ -54,6 +68,31 @@ func getDefaultConfig() *Config {
 			Path string `yaml:"path"`
 		}{
 			Path: "./pkg/storage/storage.json",
+		},
+		RateLimit: struct {
+			Enabled   bool `yaml:"enabled"`
+			MaxPerMin int  `yaml:"max_per_min"`
+		}{
+			Enabled:   true,
+			MaxPerMin: 60,
+		},
+		Features: struct {
+			Analytics    bool `yaml:"analytics"`
+			ImageUploads bool `yaml:"image_uploads"`
+			Audit        bool `yaml:"audit"`
+		}{
+			Analytics:    true,
+			ImageUploads: true,
+			Audit:        true,
+		},
+		Admin: struct {
+			DefaultUsername string `yaml:"default_username"`
+			DefaultPassword string `yaml:"default_password"`
+			DefaultEmail    string `yaml:"default_email"`
+		}{
+			DefaultUsername: "admin",
+			DefaultPassword: "adminpass",
+			DefaultEmail:    "admin@example.com",
 		},
 	}
 }

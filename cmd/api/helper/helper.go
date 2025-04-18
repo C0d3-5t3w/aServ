@@ -10,6 +10,7 @@ import (
 type contextKey string
 
 const UserIDKey contextKey = "userID"
+const UserRoleKey contextKey = "userRole"
 
 type APIResponse struct {
 	Success bool        `json:"success"`
@@ -47,6 +48,15 @@ func SetUserContext(ctx context.Context, userID string) context.Context {
 func GetUserFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(UserIDKey).(string)
 	return userID, ok
+}
+
+func SetUserRoleContext(ctx context.Context, role string) context.Context {
+	return context.WithValue(ctx, UserRoleKey, role)
+}
+
+func GetUserRoleFromContext(ctx context.Context) (string, bool) {
+	role, ok := ctx.Value(UserRoleKey).(string)
+	return role, ok
 }
 
 func ValidateEmail(email string) bool {
