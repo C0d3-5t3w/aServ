@@ -1,0 +1,21 @@
+{
+  "users": {
+    "1": {
+      "id": "1",
+      "username": "admin",
+      "password": "1f4a8240d676a471e89b583ef5262809bea09d0a9e660a2bdc5c840fbc342cb7",
+      "email": "admin@example.com",
+      "created_at": "2023-01-01T00:00:00Z"
+    }
+  },
+  "items": {
+    "1": {
+      "id": "1",
+      "name": "Example Item",
+      "description": "This is an example item",
+      "price": 19.99,
+      "created_at": "2023-01-01T00:00:00Z",
+      "created_by": "1"
+    }
+  }
+}

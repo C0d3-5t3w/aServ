@@ -1,0 +1,8 @@
+app_name: aServ
+port: "8080"
+log_level: info
+auth:
+  secret: replace-with-your-secret-key
+  expire_hrs: 24
+storage:
+  path: ./pkg/storage/storage.json
